@@ -1,3 +1,6 @@
+import json
+import os
+
 class Node:
     def __init__(self, id, type, url):
         self.id = id
@@ -35,10 +38,14 @@ class Graph:
         self.node_cnt += 1
 
     def add_edge(self, type, node1_id, node2_id):
+        print(self.edge_cnt, type, node1_id, node2_id)
+        # check if the edge is already exist
+        for edge in self.edges:
+            if (edge.from_ == node1_id and edge.to == node2_id) or (edge.from_ == node2_id and edge.to == node1_id):
+                return
         self.edges.append(Edge(type, node1_id, node2_id))
         self.edges[self.edge_cnt].next = self.head[node1_id]
         self.head[node1_id] = self.edge_cnt
-        # print(node1_id, node2_id, self.edges[self.edge_cnt].next, self.head[node1_id])
         self.edge_cnt += 1
 
     def dfs(self, now, father):
@@ -51,6 +58,16 @@ class Graph:
             to = self.edges[edge_id].to
             self.dfs(to, now)
             edge_id = self.edges[edge_id].next
+            
+    def save(self):
+        data = {
+            "nodes": [node.__dict__ for node in self.nodes],
+            "edges": [edge.__dict__ for edge in self.edges]
+        }
+        os.makedirs("Graph_tmp", exist_ok=True)
+        file_name = f"Graph_tmp/{self.nodes[0].url}.json"
+        with open(file_name, "w") as f:
+            json.dump(data, f, indent=4)
 
 
 if __name__ == "__main__":
