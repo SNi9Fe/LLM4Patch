@@ -107,10 +107,17 @@ class Tracer:
     def check_repeat_patch(self, url1, url2):
         netloc1 = urlparse(url1).netloc
         netloc2 = urlparse(url2).netloc
-        sha1 = url1.split("/")[-1]
-        sha2 = url2.split("/")[-1]
-        if netloc1 == netloc2 and sha1 == sha2:
-            return True
+        commit_sha_regex = re.compile(
+            r"(?:/commit/|;h=|[?&]h=)([a-fA-F0-9]{7,40})"
+        )
+        match1 = commit_sha_regex.search(url1)
+        match2 = commit_sha_regex.search(url2)
+        if match1 and match2:
+            sha1 = match1.group(1)
+            sha2 = match2.group(1)
+            if netloc1 == netloc2 and sha1 == sha2:
+                return True
+        return False
 
     def add_node_and_edge(self, url, now, strict=False, edge_type="reference"):
         type, url = self.classify_reference_nodes(url)
@@ -152,17 +159,17 @@ class Tracer:
         if source_node == "NVD":
             url_references = advisory["vulnerabilities"][0]["cve"]["references"]
             for reference in url_references:
-                self.add_node_and_edge(reference["url"], 1)
+                self.add_node_and_edge(remove_anchor_from_url(reference["url"]), 1)
 
         elif source_node == "Debian":
             url_references = self.extract_urls_from_debian_list()
             for url in url_references:
-                self.add_node_and_edge(url, 2)
+                self.add_node_and_edge(remove_anchor_from_url(url), 2)
 
         elif source_node == "Red Hat":
             url_references = self.extract_urls_from_redhat(advisory)
             for url in url_references:
-                self.add_node_and_edge(url, 3)
+                self.add_node_and_edge(remove_anchor_from_url(url), 3)
 
         # Add URL references as child nodes of the corresponding advisory source node
         # for url in url_references:
@@ -170,14 +177,9 @@ class Tracer:
 
     def is_patch_node(self, url):
         # Check if the reference node is a patch node
-        # github_url_pattern = r'https://github\.com/[\w-]+/[\w-]+/commit/[a-zA-Z0-9]+'
-        github_url_pattern = r"https://github\.com/[\w-]+/[\w-]+/(pull/\d+/)?(commit|commits)/[a-zA-Z0-9]+"
-        svn_url_pattern = r"http(s)?://[\w.-]+/[\w/.-]+/!svn/commit/\d+"
-        patch_pattern_1 = r"https?://(?:www\.)?(?:git\.videolan\.org|git\.libav\.org)/\?p=[^;]+;a=commit;h=[a-zA-Z0-9]+"
+        url_pattern = r".*(?:git.*(?:\/|\b)([a-fA-F0-9]{7,40})|svn.*(?:\/|\b)(\d+))(?:[\/?#@].*|$)"
         return (
-            re.match(github_url_pattern, url)
-            or re.match(svn_url_pattern, url)
-            or re.match(patch_pattern_1, url)
+            re.match(url_pattern, url)
         )
 
     def is_issue_node(self, url):
@@ -204,7 +206,8 @@ class Tracer:
 
     def is_useless_patch(self, patch_URL):
         modified_files_list = get_modified_files(patch_URL)
-
+        if modified_files_list == []:
+            return False
         # whether folder
         non_tests_file_number = 0
         for file_path in modified_files_list:

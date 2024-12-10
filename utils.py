@@ -3,11 +3,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.edge.service import Service
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse, unquote
 import time
 
 def remove_anchor_from_url(url):
-    parsed_url = urlparse(url)
+    parsed_url = unquote(url)
+    parsed_url = urlparse(parsed_url)
     parsed_url = parsed_url._replace(fragment="")
     cleaned_url = urlunparse(parsed_url)
     return cleaned_url
