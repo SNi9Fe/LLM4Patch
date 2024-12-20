@@ -129,7 +129,7 @@ class Tracer:
         new_node_id = -1
         for node in self.reference_network.nodes:
             if url == node.url or (
-                type == "patch" and self.check_repeat_patch(url, node.url)
+                type == "patch" and node.type == "patch" and self.check_repeat_patch(url, node.url)
             ):
                 new_node_id = node.id
                 break
@@ -392,12 +392,20 @@ class Tracer:
         draw.render("./cve_graph_html/" + self.cve_id + ".html")
 
     def calc_score(self, now, dep):
+        # nvd和github的直接子节点具有高置信度
+        # patch到根节点路径越多，连通性越高，n表示有n条路径
+        # patch到根节点路径越短，连通性越高，p表示第p条路径，dp表示路径p的长度
+        # 如果路径来自nvd和github，路径长度-1
         if self.reference_network.nodes[now].type == "patch":
             self.reference_network.nodes[now].score += 1.0 / (2.0 ** (dep - 1.0))
+            return
         edge_id = self.reference_network.head[now]
         while edge_id != None:
             to = self.reference_network.edges[edge_id].to
-            if self.reference_network.nodes[now].type == "NVD":
+            if self.reference_network.vis[to]:
+                edge_id = self.reference_network.edges[edge_id].next
+                continue
+            if self.reference_network.nodes[now].type == "NVD" or self.reference_network.nodes[now].type == "github":
                 self.calc_score(to, dep)
             else:
                 self.calc_score(to, dep + 1)
@@ -410,7 +418,8 @@ class Tracer:
         self.reference_analysis(0, 0, 0)
         self.reference_augmentation()
         self.reference_network.save()
-        # self.calc_score(0, 0)
+        self.reference_network.vis = [False] * self.reference_network.node_cnt
+        self.calc_score(0, 0)
         sorted_nodes = sorted(
             self.reference_network.nodes, key=lambda node: node.score, reverse=True
         )
@@ -418,8 +427,8 @@ class Tracer:
         if score > 0:
             with open("./cve_patch.csv", "a") as file:
                 for node in sorted_nodes:
-                    if node.score == score:
-                        file.write(f"{self.cve_id},{node.url},{node.score}\n")
+                    # if node.score == score:
+                    file.write(f"{self.cve_id},{node.url},{node.score}\n")
 
 
 # tracer1 = Tracer()
