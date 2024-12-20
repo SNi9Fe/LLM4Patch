@@ -51,10 +51,11 @@ def get_links(url):
         # 提取所有链接
         all_links = []
         for a_tag in soup.find_all("a", href=True):
-            full_url = urljoin(url, a_tag["href"])
-            remove_anchor_from_url(full_url)
-            if full_url not in all_links and full_url.startswith("http"):
-                all_links.append(full_url)
+            if a_tag.find_parent("pre") is None:
+                full_url = urljoin(url, a_tag["href"])
+                remove_anchor_from_url(full_url)
+                if full_url not in all_links and full_url.startswith("http"):
+                    all_links.append(full_url)
         
         return all_links
     except Exception as e:
