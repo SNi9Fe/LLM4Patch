@@ -6,6 +6,7 @@ import pyecharts.options as opts
 from pyecharts.charts import Graph as PyGraph
 from get_advisory import get_nvd_advisory, get_modified_files, get_redhat_advisory
 from utils import get_links, remove_anchor_from_url
+import json
 
 
 class Tracer:
@@ -177,7 +178,7 @@ class Tracer:
 
     def is_patch_node(self, url):
         # Check if the reference node is a patch node
-        url_pattern = r".*(?:git.*(?:\/|\b)([a-fA-F0-9]{7,40})|svn.*(?:\/|\b)(\d+))(?:[\/?#@].*|$)"
+        url_pattern = r"(?:https?:\/\/|ssh:\/\/|git@)[\w.-]+(?:\/|:)[\w./-]+(?:\.git)?(?:\/commit\/[a-f0-9]{7,40}|\/revision\/\d+)"
         return (
             re.match(url_pattern, url)
         )
@@ -206,6 +207,8 @@ class Tracer:
 
     def is_useless_patch(self, patch_URL):
         modified_files_list = get_modified_files(patch_URL)
+        if modified_files_list == [-1]:
+            return True
         if modified_files_list == []:
             return False
         # whether folder
@@ -239,15 +242,17 @@ class Tracer:
         return False
 
     def reference_analysis(self, father, now, dep):
+        # print("dep:",dep)
         # 访问过的节点不再访问
         if self.reference_network.vis[now]:
             return
         # 深度不超过5
-        if dep > 5:
+        if dep > 3:
             return
         type = self.reference_network.nodes[now].type
         self.reference_network.vis[now] = True
         if type == "hybrid" or type == "issue":
+            # print("get links: ", self.reference_network.nodes[now].url)
             links = get_links(self.reference_network.nodes[now].url)
             for link in links:
                 self.add_node_and_edge(link, now, True)
@@ -257,18 +262,68 @@ class Tracer:
             self.reference_analysis(now, to, dep + 1)
             edge_id = self.reference_network.edges[edge_id].next
 
+    def identifier_extraction(self):
+        identifiers = []
+        for node in self.reference_network.nodes:
+            if node.type in ["issue", "hybrid"]:
+                url = node.url
+            issue_identifier_pattern = r"SECURITY-\d+"
+            match = re.search(issue_identifier_pattern, url)
+            if match:
+                identifiers.append(match.group(0))
+        return identifiers
+
+    def check_cpe(self, url):
+        # vulnerabilities->cve->configurations->nodes->cpe_match->criteria
+        cve_data = get_nvd_advisory(self.cve_id)
+        configs = cve_data['vulnerabilities'][0]['cve']['configurations']
+        for config in configs:
+            cpeMatch = config['nodes'][0]['cpeMatch']
+            for cpe in cpeMatch:
+                github_regex = re.compile(r"https?://github\.com/([^/]+)/([^/]+)/commit/([a-fA-F0-9]{7,40})")
+                match = github_regex.match(url)
+                if match:
+                    owner, repo, commit_sha = match.groups()
+                    criteria = cpe['criteria'].split(":")
+                    if criteria[2] == 'a' and (criteria[3] == owner or criteria[4] == repo):
+                        return True
+                
+    
     def reference_augmentation(self):
         # Reference augmentation using GitHub API
         # Access token for GitHub API
         # /search/commits
-        api_url = f"https://api.github.com/search/commits?q={self.cve_id}"
-        headers = {"Authorization": f"Token {github_token}"}
-        # print(api_url)
-        try:
-            response = requests.get(api_url, headers=headers, timeout=10)
-        except requests.exceptions.RequestException as e:
-            # print("Request Error: ", e)
-            pass
+        identifier_regex = re.compile(r'((?![Cc][Vv][Ee])\b(?=\w*[a-zA-Z])\w+-(?=\w*\d)\w+\b([-:](?=\w*\d)\w+)?(-(?=\w*\d)\w+)?)')
+
+        identifiers = [self.cve_id]
+        for node in self.reference_network.nodes:
+            if node.type == 'issue' or node.type == 'hybrid':
+                identifier = identifier_regex.search(node.url)
+                if identifier:
+                    identifiers.append(identifier.group(0))
+        for identifier in identifiers:
+            f = open("config.json")
+            config = json.load(f)
+            github_api_key = config["github_api_key"]
+            api_url = f"https://api.github.com/search/commits?q={identifier}"
+            headers = {"Authorization": f"Bearer {github_api_key}"}
+            # print(api_url)
+            page = 1
+            while True:
+                paginated_url = f"{api_url}&page={page}&per_page=30"
+                try:
+                    response = requests.get(paginated_url, headers=headers, timeout=10)
+                    res = response.json()
+                    if "items" not in res or not res["items"]:
+                        break
+                    res = response.json()
+                    for item in res['items']:
+                        if self.check_cpe(item['html_url']):
+                            self.add_node_and_edge(item['html_url'], 4, True, "contain")
+                except requests.exceptions.RequestException as e:
+                    # print("Request Error: ", e)
+                    pass
+                page += 1
 
     def draw(self):
         categories = [
@@ -371,8 +426,6 @@ class Tracer:
 # print(tracer1.is_patch_node('https://github.com/crewjam/saml/commit/814d1d9c18457deeda08cbda2d38f79bedccfa62'))
 # print(tracer1.is_patch_node('https://github.com/crewjam/saml/pull/140/commits/55d682de6bbefc17e979db16292f115467916919'))
 
-
-github_token = ""
 file_path = "./input.txt"
 with open(file_path, "r") as file:
     for line in file:

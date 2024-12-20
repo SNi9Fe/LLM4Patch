@@ -58,12 +58,12 @@ def get_modified_files(commit_url):
         try:
             response = requests.get(api_url, headers=headers, timeout=10)
         except requests.exceptions.RequestException as e:
-            return []
+            return [-1]
         try:
             commit_data = response.json()
             files = commit_data["files"]
         except (KeyError, TypeError) as e:
-            files = []
+            return [-1]
 
         modified_files = [file["filename"] for file in files]
         return modified_files
