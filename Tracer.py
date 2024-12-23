@@ -172,10 +172,6 @@ class Tracer:
             for url in url_references:
                 self.add_node_and_edge(remove_anchor_from_url(url), 3)
 
-        # Add URL references as child nodes of the corresponding advisory source node
-        # for url in url_references:
-        #     self.reference_network[self.cve_id]['children'].append({'type': 'reference', 'source': source_node, 'url': url})
-
     def is_patch_node(self, url):
         # Check if the reference node is a patch node
         url_pattern = r"(?:https?:\/\/|ssh:\/\/|git@)[\w.-]+(?:\/|:)[\w./-]+(?:\.git)?(?:\/commit\/[a-f0-9]{7,40}|\/revision\/\d+)"
@@ -429,11 +425,6 @@ class Tracer:
                 for node in sorted_nodes:
                     # if node.score == score:
                     file.write(f"{self.cve_id},{node.url},{node.score}\n")
-
-
-# tracer1 = Tracer()
-# print(tracer1.is_patch_node('https://github.com/crewjam/saml/commit/814d1d9c18457deeda08cbda2d38f79bedccfa62'))
-# print(tracer1.is_patch_node('https://github.com/crewjam/saml/pull/140/commits/55d682de6bbefc17e979db16292f115467916919'))
 
 file_path = "./input.txt"
 with open(file_path, "r") as file:
